@@ -196,6 +196,34 @@ class SSNMF_N:
                 currentErr = self.Idiv(self.X, self.A, self.S, self.W) + self.lam * self.Idiv(self.Y, self.B, self.S, self.L)
                 if i == 0:
                     initialErr = currentErr
+            ########################################################
+            #convex ssnmf
+            #factorized C = YB
+            if self.modelNum == 7:
+                self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps) #Update for A is the same as dictupdateFro.
+                self.B = self.dictupdateConvexFro(self.Y, self.B, self.S, self.L, eps) ##new, modify denominator to np.multiply(M,Z@D@R)@np.transpose(R)
+                self.S = self.repupdateConvexFF(eps) 
+
+                previousErr = currentErr
+                currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm(self.Y, self.Y@self.B, self.S, self.L)**2)
+                if i == 0:
+                    initialErr = currentErr
+            ####################################################
+
+            ########################################################
+            #convex ssnmf
+            #factorized C = YB
+            # SQUARE ROOT UPDATE -- Ding,Li,Jordan Convex nmf paper
+            if self.modelNum == 8:
+                self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps) #Update for A is the same as dictupdateFro.
+                self.B = self.dictupdateConvexFroSq(self.Y, self.B, self.S, self.L, eps) ##new, modify denominator to np.multiply(M,Z@D@R)@np.transpose(R)
+                self.S = self.repupdateConvexFFSq(eps) 
+
+                previousErr = currentErr
+                currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm(self.Y, self.Y@self.B, self.S, self.L)**2)
+                if i == 0:
+                    initialErr = currentErr
+            ####################################################
 
             if i>0 and (previousErr - currentErr) / initialErr < self.tol:
                 break
@@ -226,6 +254,22 @@ class SSNMF_N:
                     classerrs.append(self.Idiv(self.Y, self.B, self.S, self.L))
                     errs.append(reconerrs[i] + self.lam * classerrs[i])  # save errors
                     classaccs.append(self.accuracy())
+                ###########################################################
+                ## keep error the same way as model 3 where it's both fro. norm.
+                if self.modelNum == 7:
+                    reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.fronorm(self.Y, self.Y@self.B, self.S, self.L))
+                    errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i] ** 2)
+                    classaccs.append(self.accuracy())
+                ##################################################################
+                ###########################################################
+                ## keep error the same way as model 3 where it's both fro. norm.
+                if self.modelNum == 8:
+                    reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.fronorm(self.Y, self.Y@self.B, self.S, self.L))
+                    errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i] ** 2)
+                    classaccs.append(self.accuracy())
+                ##################################################################
 
         if saveerrs:
             if self.modelNum == 1 or self.modelNum == 2:
@@ -285,6 +329,67 @@ class SSNMF_N:
         '''
         return np.multiply(np.divide(D, eps + M @ np.transpose(R)), \
                            np.multiply(np.divide(np.multiply(M, Z), eps + np.multiply(M, D @ R)), M) @ np.transpose(R))
+###############################################################################
+    def absolutePositiveEntry(self,G):
+        return np.true_divide(np.add(np.abs(G),G))
+
+    def absoluteNegativeEntry(self,G):
+        return np.true_divide(np.subtract(np.abs(G),G))
+###############################################################################
+    def dictupdateConvexFro(self, Z, D, R, M, eps):
+        '''
+        multiplicitive update for D in ||Z - ZDR||_F^2
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        R   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated D
+        '''
+        
+        #multiply
+        #(self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)
+        
+        #divide
+        #(self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)
+
+        return  np.multiply(
+                np.divide(D, eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)), \
+                (self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R))
+
+    def dictupdateConvexFroSq(self, Z, D, R, M, eps):
+        '''
+        square rooted multiplicitive update for D and R in ||Z - ZDR||_F^2
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        R   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated D
+        '''
+        return  np.multiply(np.sqrt(
+                np.divide(D, eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)), \
+                (self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)))
+
+###############################################################################################
 
     def repupdateFF(self, eps):
     # update to use for S in model (3)
@@ -320,6 +425,26 @@ class SSNMF_N:
             self.lam * np.transpose(self.B) @ np.multiply(np.divide(np.multiply(self.L, self.Y), eps + np.multiply(self.L, self.B @ self.S)), self.L)
         )
 
+    #####################################################
+    def repupdateConvexFF(self, eps):
+    # update to use for S in model (7)
+
+        return np.multiply(
+            np.divide(self.S, eps + np.transpose(self.A)@(self.absolutePositiveEntry(np.multiply(self.W,self.X))+self.absoluteNegativeEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))),
+            np.transpose(self.A)@(self.absoluteNegativeEntry(np.multiply(self.W,self.X))+self.absolutePositiveEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))
+        )
+    def repupdateConvexFFSq(self, eps):
+    # update to use for S in model (7)
+        return np.multiply(np.sqrt(
+            np.divide(self.S, eps + np.transpose(self.A)@(self.absolutePositiveEntry(np.multiply(self.W,self.X))+self.absoluteNegativeEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))),
+            np.transpose(self.A)@(self.absoluteNegativeEntry(np.multiply(self.W,self.X))+self.absolutePositiveEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))
+        ))
+    #####################################################
+
     def accuracy(self, **kwargs):
         '''
         Compute accuracy of supervised model.
@@ -349,7 +474,10 @@ class SSNMF_N:
 
         # count number of data points which are correctly classified
         numacc = 0
-        Yhat = B @ S
+        if self.modelNum == 7 or self.modelNum ==8:####################################################
+            Yhat = Y @ B @ S
+        else:
+            Yhat = B @ S
         for i in range(numdata):
             true_max = np.argmax(Y[:, i])
             approx_max = np.argmax(Yhat[:, i])
@@ -901,7 +1029,7 @@ class SSNMF(SSNMF_N, SSNMF_T):
                    Missing label indicator matrix of same size as Y (the default is matrix of all ones if
                    Y is not None, None otherwise).
         tol      : Tolerance for relative error stopping criterion
-                  (i.e., method stops when difference between consecutive relative errors falls below tol) 
+                  (i.e., method stops when difference between consecutive relative errors falls below tol)
         str      : a flag to indicate whether this model is initialized by Numpy array or PyTorch tensor
 
         Methods
