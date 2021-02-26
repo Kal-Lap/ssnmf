@@ -5,6 +5,495 @@ import numpy as np
 from numpy import linalg as la
 import torch
 
+class C_SSNMF:
+    """
+    class for Convex-SSNMF model.
+    The NMF model consists of the data matrix to be factorrized, X, the factor matrices, A and S.
+    Each model also consisits of a label matrix, Y, classification factor matrix, B, and 
+    classification weight parameter, lam (although these three variables will be empty if Y is not
+    input).  Given we hold the convexity constraint on the factor matrix for the data matrix, X, 
+    or the label matrix, Y , or both, we further define a constaint matrix C, which ensures the 
+    convexity on the chosen data matrix. These parameters define the objective function defining the model:
+    (1) ||X - AS||_F^2 + lam * ||Y - YCS||_F^2
+    (2) ||X - XCS||_F^2 + lam * ||Y - BS||_F^2
+    (3) ||X - XCS||_F^2 + lam * ||Y - YCS||_F^2
+    (4) to be continued ...
+    ...
+    parameters:
+    X        : array
+               Data matrix of size m x n.
+    k        : int_
+               Number of topics.
+    modelNum : int_, optional
+               Number indicating which of above models user intends to train (the default is 1).
+    A        : array, optional
+               Initialization for left factor matrix of X of size m x k (the default is a matrix with
+               uniform random entries).
+    S        : array, optional
+               Initialization for right factor matrix of X of size k x n (the default is a matrix with
+               uniform random entries).
+    Y        : array, optional
+               Label matrix of size p x n (default is None).
+    B        : array, optional
+               Initialization for left factor matrix of Y of size p x k (the default is a matrix with
+               uniform random entries if Y is not None, None otherwise).
+    C        : array
+               size n x k
+    lam      : float_, optional
+               Weight parameter for classification term in objective (the default is 1 if Y is not
+               None, None otherwise).
+    W        : array, optional
+               Missing data indicator matrix of same size as X (the defaults is matrix of all ones).
+    L        : array, optional
+               Missing label indicator matrix of same size as Y (the default is matrix of all ones if
+               Y is not None, None otherwise).
+    tol      : tolerance for termanating the model
+
+    Methods
+    -------
+    mult(numiters = 10, saveerrs = True)
+        Train the selected model via numiters multiplicative updates.
+    accuracy()
+        Compute the classification accuracy of supervised model (using Y, B, and S).
+    kldiv()
+        Compute the KL-divergence, D(Y||BS), of supervised model (using Y, B, and S).
+        
+    """
+    #####################
+    ## what is kwargs? ## key word python built-in tool 
+    #####################
+    def __init__(self, X, k, **kwargs):
+        self.X = X
+        rows = np.shape(X)[0]
+        cols = np.shape(X)[1]
+        self.modelNum = kwargs.get('modelNum', 1)  # initialize model indicator
+        self.W = kwargs.get('W', np.ones((rows, cols)))  # initialize missing data indicator matrix
+        self.A = kwargs.get('A', np.random.rand(rows, k))  # initialize factor A
+        self.S = kwargs.get('S', np.random.rand(k, cols))  # initialize factor S
+        ######################
+        ## Edits 1
+        ######################
+        self.C = kwargs.get('C',S @ la.inv(np.transpose(S) @ S))
+        self.tol = kwargs.get('tol', 1e-4) # initialize factor tol
+
+        # check dimensions of X, A, and S match
+        if rows != np.shape(self.A)[0]:
+            raise Exception('The row dimensions of X and A are not equal.')
+        if cols != np.shape(self.S)[1]:
+            raise Exception('The column dimensions of X and S are not equal.')
+        #####################
+        ## Edits 2
+        #####################
+        if cols != np.shape(self.C)[0]:
+            raise Exception('The row dimensions of C is not n')
+        if np.shape(self.C)[1] != k:
+            raise Exception('The column dimensions of C is not k')
+        if np.shape(self.A)[1] != k:
+            raise Exception('The column dimension of A is not k.')
+        if np.shape(self.S)[0] != k:
+            raise Exception('The row dimension of S is not k.')
+
+        # supervision initializations (optional)
+        self.Y = kwargs.get('Y', None)
+        if self.Y is not None:
+            # check dimensions of X and Y match
+            if np.shape(self.Y)[1] != np.shape(self.X)[1]:
+                raise Exception('The column dimensions of X and Y are not equal.')
+
+            classes = np.shape(self.Y)[0]
+            self.B = kwargs.get('B', np.random.rand(classes, k))
+            self.lam = kwargs.get('lam', 1)
+            self.L = kwargs.get('L', np.ones((classes, cols)))  # initialize missing label indicator matrix
+
+            # check dimensions of Y, S, and B match
+            if np.shape(self.B)[0] != classes:
+                raise Exception('The row dimensions of Y and B are not equal.')
+            if np.shape(self.B)[1] != k:
+                raise Exception('The column dimension of B is not k.')
+        else:
+            self.B = None
+            self.lam = None
+            self.L = None
+    def mult(self, **kwargs):
+        '''
+        Multiplicative updates for training convex-SSNMF model.
+        Parameters
+        ----------
+        numiters : int_, optional
+            Number of iterations of updates to run (default is 10).
+        saveerrs : bool, optional
+            Boolean indicating whether to save model errors during iterations.
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        errs : array, optional
+            If saveerrs, returns array of ||X - AS||_F for each iteration (length numiters).
+        '''
+        numiters = kwargs.get('numiters', 10)
+        saveerrs = kwargs.get('saveerrs', False)
+        eps = kwargs.get('eps', 1e-10)
+        initialErr = 0
+        previousErr = 0
+        currentErr = 0
+
+        if saveerrs:
+        # based on model number, initialize correct type of error array(s)
+            if self.modelNum == 1 or self.modelNum == 2:
+                errs = []  # initialize error array
+            else :
+                errs = []  # initialize error array
+                reconerrs = []
+                classerrs = []
+                classaccs = []
+
+
+        for i in range(numiters):
+            # multiplicative updates for A, S, and possibly B
+            # based on model number, use proper update functions for A,S,(B)
+            #####################
+            ## Edits 3
+            #####################            
+            if self.modelNum == 1:
+                self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
+                self.C = self.dictupdatecFro(self.Y,self.C, self.S, self.L, eps)
+                self.S = 
+                self.S = np.transpose(self.dictupdateFro(np.transpose(self.X), np.transpose(self.S), np.transpose(self.A), np.transpose(self.W), eps))
+
+                previousErr = currentErr
+                currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
+                if i == 0:
+                    initialErr = currentErr
+            #############################################
+            ### if self.modelNum == 2:
+            
+            ### if self.modelNum == 3:
+            
+            ###
+            #############################################
+                
+
+            if i>0 and (previousErr - currentErr) / initialErr < self.tol:
+                break
+
+            if saveerrs:
+            # based on model number, initialize correct type of error array(s)
+                if self.modelNum == 1:
+                    reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.fronorm(self.Y, self.B, self.S, self.L))
+                    errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i] ** 2)
+                    classaccs.append(self.accuracy())
+                if self.modelNum == 4:
+                    reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.Idiv(self.Y, self.B, self.S, self.L))
+                    errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i])
+                    classaccs.append(self.accuracy())
+                if self.modelNum == 5:
+                    reconerrs.append(self.Idiv(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.fronorm(self.Y, self.B, self.S, self.L))
+                    errs.append(reconerrs[i] + self.lam * (classerrs[i] ** 2))  # save errors
+                    classaccs.append(self.accuracy())
+                if self.modelNum == 6:
+                    reconerrs.append(self.Idiv(self.X, self.A, self.S, self.W))
+                    classerrs.append(self.Idiv(self.Y, self.B, self.S, self.L))
+                    errs.append(reconerrs[i] + self.lam * classerrs[i])  # save errors
+                    classaccs.append(self.accuracy())
+
+        if saveerrs:
+            if self.modelNum == 1 or self.modelNum == 2:
+                errs =np.array(errs)
+                return [errs]
+            else:
+                errs = np.array(errs)
+                reconerrs = np.array(reconerrs)
+                classerrs = np.array(classerrs)
+                classaccs = np.array(classaccs)
+                return [errs, reconerrs, classerrs, classaccs]
+
+    # based on model number, return correct type of error array(s)
+    #####################
+    ## Edits 4
+    #####################
+    def dictupdatecFro(self, Z, C, R, M, eps):
+        '''
+        multiplicative update for C in ||Z - ZCR||_F^2
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        C   : array
+              Convexity constaint matrix of X
+        R   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated C
+        #############################################
+        ## My calculation is purely based on note and 
+        ## did not include the missing indicator M
+        #############################################
+        '''
+        return np.muptiply(
+               C,
+               np.divide( eps+ np.add(np.transpose(Z)@Z@R@np.transpose(R)@np.tranpose(C), \
+                                 np.transpose(Z)@Z@C@np.transpose(R)@R), \
+                          np.add(np.transpose(R@np.transpose(Z)@Z), \
+                                 np.transpose(Z)@Z@np.transpose(R)))
+    #####################
+    ## Edits 5
+    #####################
+    def dictupdatesFro(self,Z, A, H, C, R, M, N, eps):
+        '''
+        multiplicative update for R in ||Z - AR||_F^2 + lam * ||H - HCR||_F^2
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        H   : array
+              Label matrix.
+        A   : array
+              Left factor matrix of Z.
+        C   : array
+              Convexity constaint matrix of H.
+        R   : array
+              Right factor matrix of Z & H.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        N   : array
+              Missing data indicator matrix of same size of H (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated R
+        #############################################
+        ## My calculation is purely based on note and 
+        ## did not include the missing indicator M & N
+        #############################################
+        ''' 
+        return np.muptiply(
+               R,
+               np.divide( eps + np.add(np.transpose(C)@np.transpose(H)@H, \
+                                 np.transpose(A)@Z, \
+                          np.add(R@np.transpose(C)@np.transpose(H)@H@C), \
+                                 R@np.transpose(A)@A)))
+
+    def dictupdateFro(self, Z, D, R, M, eps):
+        '''
+        multiplicitive update for D and R in ||Z - DR||_F^2
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        R   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated D or the transpose of updated R
+        '''
+
+        return  np.multiply(
+                np.divide(D, eps + np.multiply(M, D@R) @ np.transpose(R)), \
+                np.multiply(M, Z) @ np.transpose(R))
+
+    def dictupdateIdiv(self, Z, D, R, M, eps):
+        '''
+        multiplicitive update for D and R in D(Z||DR)
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        R   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        updated D or the transpose of updated R
+        '''
+        return np.multiply(np.divide(D, eps + M @ np.transpose(R)), \
+                           np.multiply(np.divide(np.multiply(M, Z), eps + np.multiply(M, D @ R)), M) @ np.transpose(R))
+
+    def repupdateFF(self, eps):
+    # update to use for S in model (3)
+        return np.multiply(
+            np.divide(self.S, eps + np.transpose(self.A) @ np.multiply(self.W, self.A @ self.S) + \
+                      self.lam * np.transpose(self.B) @ np.multiply(self.L, self.B @ self.S)),
+            np.transpose(self.A) @ np.multiply(self.W, self.X) + self.lam * np.transpose(self.B) @ np.multiply(self.L, self.Y)
+        )
+
+    def repupdateIF(self, eps, modelNum):
+    # update to use for S in models (4) and (5)
+        if modelNum == 4:
+            return np.multiply(
+                np.divide(self.S, eps + (2 * np.transpose(self.A) @ np.multiply(self.W, self.A @ self.S) +
+                                         self.lam * np.transpose(self.B) @ self.L)),
+                2 * np.transpose(self.A) @ np.multiply(self.W, self.X) + self.lam * np.transpose(self.B) @ \
+                np.multiply(np.divide(np.multiply(self.L, self.Y), eps + np.multiply(self.L, self.B @ self.S)), self.L)
+            )
+
+        if modelNum == 5:
+            return np.multiply(
+                np.divide(self.S, eps + np.transpose(self.A) @ self.W + \
+                                  2 * self.lam * np.transpose(self.B) @ np.multiply(self.L, self.B @ self.S)),
+                np.transpose(self.A) @  np.multiply(np.divide(np.multiply(self.W, self.X), eps + np.multiply(self.W, self.A @ self.S)), self.W) + \
+                2 * self.lam * np.transpose(self.B) @ np.multiply(self.L, self.Y)
+            )
+
+    def repupdateII(self, eps):
+    # update to use for S in model (6)
+        return np.multiply(
+            np.divide(self.S, eps + np.transpose(self.A) @ self.W + self.lam * np.transpose(self.B) @ self.L),
+            np.transpose(self.A) @ np.multiply(np.divide(np.multiply(self.W, self.X), eps + np.multiply(self.W, self.A @ self.S)), self.W) + \
+            self.lam * np.transpose(self.B) @ np.multiply(np.divide(np.multiply(self.L, self.Y), eps + np.multiply(self.L, self.B @ self.S)), self.L)
+        )
+
+    def accuracy(self, **kwargs):
+        '''
+        Compute accuracy of supervised model.
+        Parameters
+        ----------
+        Y : array, optional
+            Label matrix (default is self.Y).
+        B : array, optional
+            Left factor matrix of Y (default is self.B).
+        S : array, optional
+            Right factor matrix of Y (default is self.S).
+        L :
+        Returns
+        -------
+        acc : float_
+            Fraction of correctly classified data points (computed with Y, B, S).
+        '''
+
+        Y = kwargs.get('Y', self.Y)
+        B = kwargs.get('B', self.B)
+        S = kwargs.get('S', self.S)
+
+        if Y is None:
+            raise Exception('Label matrix Y not provided: model is not supervised.')
+
+        numdata = np.shape(Y)[1]
+
+        # count number of data points which are correctly classified
+        numacc = 0
+        Yhat = B @ S
+        for i in range(numdata):
+            true_max = np.argmax(Y[:, i])
+            approx_max = np.argmax(Yhat[:, i])
+
+            if true_max == approx_max:
+                numacc = numacc + 1
+
+        # return fraction of correctly classified data points
+        acc = numacc / numdata
+        return acc
+
+    def Idiv(self, Z, D, S, M, **kwargs):
+        '''
+        Compute I-divergence between Z and DS.
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        S   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        eps : float_, optional
+            Epsilon value to prevent division by zero (default is 1e-10).
+        Returns
+        -------
+        Idiv : float_
+            I-divergence between Z and DS.
+        '''
+        eps = kwargs.get('eps', 1e-10)
+
+        if Z is None:
+            raise Exception('Matrix Z not provided.')
+        if M is None:
+            M = np.ones(Z.shape, dtype = float)
+
+        # compute divergence
+        Zhat = np.multiply(M, D @ S)
+        div = np.multiply(np.multiply(M, Z), np.log(np.divide(np.multiply(M, Z) + eps, Zhat + eps))) \
+              - np.multiply(M, Z) + Zhat
+        Idiv = np.sum(np.sum(div))
+        return Idiv
+
+    def fronorm(self, Z, D, S, M, **kwargs):
+        '''
+        Compute Frobenius norm between Z and DS.
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        S   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        Returns
+        -------
+        fronorm : float_
+            Frobenius norm between Z and DS.
+        '''
+
+        if Z is None:
+            raise Exception('Matrix Z not provided.')
+        if M is None:
+            M = np.ones(Z.shape, dtype = float)
+
+        # compute norm
+        Zhat = np.multiply(M, D @ S)
+        fronorm = np.linalg.norm(np.multiply(M, Z) - Zhat, 'fro')
+        return fronorm
+    def fronorm_c(self, Z, D, S, M, **kwargs):
+        '''
+        Compute Frobenius norm between Z and DS.
+        Parameters
+        ----------
+        Z   : array
+              Data matrix.
+        D   : array
+              Left factor matrix of Z.
+        S   : array
+              Right factor matrix of Z.
+        M   : array
+              Missing data indicator matrix of same size as Z (the defaults is matrix of all ones).
+        Returns
+        -------
+        fronorm : float_
+            Frobenius norm between Z and DS.
+        '''
+
+        if Z is None:
+            raise Exception('Matrix Z not provided.')
+        if M is None:
+            M = np.ones(Z.shape, dtype = float)
+
+        # compute norm
+        Zhat = np.multiply(M, D @ S)
+        fronorm = np.linalg.norm(np.multiply(M, Z) - Zhat, 'fro')
+        return fronorm    
+    
 
 class SSNMF_N:
     """
@@ -68,6 +557,7 @@ class SSNMF_N:
         self.W = kwargs.get('W', np.ones((rows, cols)))  # initialize missing data indicator matrix
         self.A = kwargs.get('A', np.random.rand(rows, k))  # initialize factor A
         self.S = kwargs.get('S', np.random.rand(k, cols))  # initialize factor S
+        self.C = 
         self.tol = kwargs.get('tol', 1e-4) # initialize factor tol
 
         # check dimensions of X, A, and S match
@@ -139,6 +629,8 @@ class SSNMF_N:
         for i in range(numiters):
             # multiplicative updates for A, S, and possibly B
             # based on model number, use proper update functions for A,S,(B)
+            
+            ## ||Z - DR||_F^2
             if self.modelNum == 1:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
                 self.S = np.transpose(self.dictupdateFro(np.transpose(self.X), np.transpose(self.S), np.transpose(self.A), np.transpose(self.W), eps))
@@ -196,6 +688,7 @@ class SSNMF_N:
                 currentErr = self.Idiv(self.X, self.A, self.S, self.W) + self.lam * self.Idiv(self.Y, self.B, self.S, self.L)
                 if i == 0:
                     initialErr = currentErr
+                
 
             if i>0 and (previousErr - currentErr) / initialErr < self.tol:
                 break
