@@ -86,17 +86,28 @@ class SSNMF_N:
             # check dimensions of X and Y match
             if np.shape(self.Y)[1] != np.shape(self.X)[1]:
                 raise Exception('The column dimensions of X and Y are not equal.')
+            if self.modelNum >= 7:
+                classes = np.shape(self.Y)[0]
+                self.B = kwargs.get('B', np.random.rand(np.shape(self.Y)[1], k)) #initialize nxk for convex nmf ######################
+                self.lam = kwargs.get('lam', 1)
+                self.L = kwargs.get('L', np.ones((classes, cols)))  # initialize missing label indicator matrix
 
-            classes = np.shape(self.Y)[0]
-            self.B = kwargs.get('B', np.random.rand(classes, k))
-            self.lam = kwargs.get('lam', 1)
-            self.L = kwargs.get('L', np.ones((classes, cols)))  # initialize missing label indicator matrix
+                # check dimensions of Y, S, and B match
+                if np.shape(self.B)[0] != np.shape(self.Y)[1]:
+                    raise Exception('The row dimensions of Y and B are not equal.')
+                if np.shape(self.B)[1] != k:
+                    raise Exception('The column dimension of B is not k.')
+            else: 
+                classes = np.shape(self.Y)[0]
+                self.B = kwargs.get('B', np.random.rand(classes, k))
+                self.lam = kwargs.get('lam', 1)
+                self.L = kwargs.get('L', np.ones((classes, cols)))  # initialize missing label indicator matrix
 
-            # check dimensions of Y, S, and B match
-            if np.shape(self.B)[0] != classes:
-                raise Exception('The row dimensions of Y and B are not equal.')
-            if np.shape(self.B)[1] != k:
-                raise Exception('The column dimension of B is not k.')
+                # check dimensions of Y, S, and B match
+                if np.shape(self.B)[0] != classes:
+                    raise Exception('The row dimensions of Y and B are not equal.')
+                if np.shape(self.B)[1] != k:
+                    raise Exception('The column dimension of B is not k.')
         else:
             self.B = None
             self.lam = None
@@ -331,10 +342,10 @@ class SSNMF_N:
                            np.multiply(np.divide(np.multiply(M, Z), eps + np.multiply(M, D @ R)), M) @ np.transpose(R))
 ###############################################################################
     def absolutePositiveEntry(self,G):
-        return np.true_divide(np.add(np.abs(G),G))
+        return np.true_divide(np.add(np.abs(G),G),2)
 
     def absoluteNegativeEntry(self,G):
-        return np.true_divide(np.subtract(np.abs(G),G))
+        return np.true_divide(np.subtract(np.abs(G),G),2)
 ###############################################################################
     def dictupdateConvexFro(self, Z, D, R, M, eps):
         '''
@@ -362,10 +373,13 @@ class SSNMF_N:
         #divide
         #(self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)
 
+        #return  np.multiply(
+                #np.divide(D, eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)), \
+                #(self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R))
         return  np.multiply(
                 np.divide(D, eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)), \
                 (self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R))
-
+    
     def dictupdateConvexFroSq(self, Z, D, R, M, eps):
         '''
         square rooted multiplicitive update for D and R in ||Z - ZDR||_F^2
@@ -385,9 +399,9 @@ class SSNMF_N:
         -------
         updated D
         '''
-        return  np.multiply(np.sqrt(
-                np.divide(D, eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)), \
-                (self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)))
+        return  np.multiply(
+                np.divide(D, np.sqrt(eps + (self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R))), \
+                np.sqrt((self.absolutePositiveEntry(np.transpose(Z)@np.multiply(M,Z)) + self.absoluteNegativeEntry(np.transpose(Z)@np.multiply(M,Z@D@R)))@np.transpose(R)))
 
 ###############################################################################################
 
@@ -436,13 +450,13 @@ class SSNMF_N:
                       self.lam * np.transpose(self.B)@(self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))
         )
     def repupdateConvexFFSq(self, eps):
-    # update to use for S in model (7)
-        return np.multiply(np.sqrt(
-            np.divide(self.S, eps + np.transpose(self.A)@(self.absolutePositiveEntry(np.multiply(self.W,self.X))+self.absoluteNegativeEntry(np.multiply(self.W,self.A@self.S)))+ \
-                      self.lam * np.transpose(self.B)@(self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))),
-            np.transpose(self.A)@(self.absoluteNegativeEntry(np.multiply(self.W,self.X))+self.absolutePositiveEntry(np.multiply(self.W,self.A@self.S)))+ \
-                      self.lam * np.transpose(self.B)@(self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S)))
-        ))
+    # update to use for S in model (8)
+        return np.multiply(
+            np.divide(self.S, np.sqrt(eps + np.transpose(self.A)@(self.absolutePositiveEntry(np.multiply(self.W,self.X))+self.absoluteNegativeEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S))))),
+            np.sqrt(np.transpose(self.A)@(self.absoluteNegativeEntry(np.multiply(self.W,self.X))+self.absolutePositiveEntry(np.multiply(self.W,self.A@self.S)))+ \
+                      self.lam * np.transpose(self.B)@(self.absoluteNegativeEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y))+self.absolutePositiveEntry(np.transpose(self.Y)@np.multiply(self.L,self.Y@self.B@self.S))))
+        )
     #####################################################
 
     def accuracy(self, **kwargs):
@@ -1143,7 +1157,3 @@ class SSNMF(SSNMF_N, SSNMF_T):
             return SSNMF_N.fronorm(self, Z, D, S, M, **kwargs)
         if self.str == "torch":
             return SSNMF_T.fronorm(self, Z, D, S, M, **kwargs)
-
-
-
-
