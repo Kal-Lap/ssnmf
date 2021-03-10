@@ -17,7 +17,7 @@ class C_SSNMF:
     (1) ||X - AS||_F^2 + lam * ||Y - YCS||_F^2
     (2) ||X - XCS||_F^2 + lam * ||Y - BS||_F^2
     (3) ||X - XCS||_F^2 + lam * ||Y - YCS||_F^2
-    (4) to be continued ...
+    (4) sqrt loss & KL-divergence?
     ...
     parameters:
     X        : array
@@ -59,21 +59,23 @@ class C_SSNMF:
         Compute the KL-divergence, D(Y||BS), of supervised model (using Y, B, and S).
         
     """
-    #####################
-    ## what is kwargs? ## key word python built-in tool 
-    #####################
+    S = np.random.rand(10,40)
+    C = np.random.rand(40,10)
+    A = np.random.rand(40,10)
+
     def __init__(self, X, k, **kwargs):
+
         self.X = X
         rows = np.shape(X)[0]
         cols = np.shape(X)[1]
         self.modelNum = kwargs.get('modelNum', 1)  # initialize model indicator
         self.W = kwargs.get('W', np.ones((rows, cols)))  # initialize missing data indicator matrix
+
         self.A = kwargs.get('A', np.random.rand(rows, k))  # initialize factor A
         self.S = kwargs.get('S', np.random.rand(k, cols))  # initialize factor S
-        ######################
-        ## Edits 1
-        ######################
-        self.C = kwargs.get('C',S @ la.inv(np.transpose(S) @ S))
+
+        self.C = kwargs.get('C',np.random.rand(cols,k)) # initialize factor C
+
         self.tol = kwargs.get('tol', 1e-4) # initialize factor tol
 
         # check dimensions of X, A, and S match
@@ -81,9 +83,6 @@ class C_SSNMF:
             raise Exception('The row dimensions of X and A are not equal.')
         if cols != np.shape(self.S)[1]:
             raise Exception('The column dimensions of X and S are not equal.')
-        #####################
-        ## Edits 2
-        #####################
         if cols != np.shape(self.C)[0]:
             raise Exception('The row dimensions of C is not n')
         if np.shape(self.C)[1] != k:
@@ -139,8 +138,11 @@ class C_SSNMF:
 
         if saveerrs:
         # based on model number, initialize correct type of error array(s)
-            if self.modelNum == 1 or self.modelNum == 2:
+            if self.modelNum == 1:
                 errs = []  # initialize error array
+                reconerrs = []
+                classerrs = []
+                classaccs = []
             else :
                 errs = []  # initialize error array
                 reconerrs = []
@@ -149,30 +151,25 @@ class C_SSNMF:
 
 
         for i in range(numiters):
-            # multiplicative updates for A, S, and possibly B
-            # based on model number, use proper update functions for A,S,(B)
-            #####################
-            ## Edits 3
-            #####################            
+            # multiplicative updates for A, S, and possibly C
+            # based on model number, use proper update functions for A,S,(C)
+         
             if self.modelNum == 1:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
                 self.C = self.dictupdatecFro(self.Y,self.C, self.S, self.L, eps)
-                self.S = 
-                self.S = np.transpose(self.dictupdateFro(np.transpose(self.X), np.transpose(self.S), np.transpose(self.A), np.transpose(self.W), eps))
+                self.S = self.dictupdatesFro(self.X,self.A, self.Y,self.C,self.S,self.W,self.L,eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
                 if i == 0:
                     initialErr = currentErr
-            #############################################
-            ### if self.modelNum == 2:
+            ########################
+            ### Edits to be Made ###
+            ########################
+            #elif self.modelNum == 2:
             
-            ### if self.modelNum == 3:
-            
-            ###
-            #############################################
-                
-
+            #elif self.modelNum == 3:
+            ## stopping criteria
             if i>0 and (previousErr - currentErr) / initialErr < self.tol:
                 break
 
@@ -180,29 +177,24 @@ class C_SSNMF:
             # based on model number, initialize correct type of error array(s)
                 if self.modelNum == 1:
                     reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
-                    classerrs.append(self.fronorm(self.Y, self.B, self.S, self.L))
+                    classerrs.append(self.fronorm_c(self.Y, self.C, self.S, self.L))
                     errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i] ** 2)
                     classaccs.append(self.accuracy())
-                if self.modelNum == 4:
-                    reconerrs.append(self.fronorm(self.X, self.A, self.S, self.W))
-                    classerrs.append(self.Idiv(self.Y, self.B, self.S, self.L))
-                    errs.append(reconerrs[i] ** 2 + self.lam * classerrs[i])
-                    classaccs.append(self.accuracy())
-                if self.modelNum == 5:
-                    reconerrs.append(self.Idiv(self.X, self.A, self.S, self.W))
-                    classerrs.append(self.fronorm(self.Y, self.B, self.S, self.L))
-                    errs.append(reconerrs[i] + self.lam * (classerrs[i] ** 2))  # save errors
-                    classaccs.append(self.accuracy())
-                if self.modelNum == 6:
-                    reconerrs.append(self.Idiv(self.X, self.A, self.S, self.W))
-                    classerrs.append(self.Idiv(self.Y, self.B, self.S, self.L))
-                    errs.append(reconerrs[i] + self.lam * classerrs[i])  # save errors
-                    classaccs.append(self.accuracy())
+                ########################
+                ### Edits to be Made ###
+                ########################
+                #elif self.modelNum == 2:
+            
+                #elif self.modelNum == 3:
+
 
         if saveerrs:
             if self.modelNum == 1 or self.modelNum == 2:
-                errs =np.array(errs)
-                return [errs]
+                errs = np.array(errs)
+                reconerrs = np.array(reconerrs)
+                classerrs = np.array(classerrs)
+                classaccs = np.array(classaccs)
+                return [errs, reconerrs, classerrs, classaccs]
             else:
                 errs = np.array(errs)
                 reconerrs = np.array(reconerrs)
@@ -211,9 +203,7 @@ class C_SSNMF:
                 return [errs, reconerrs, classerrs, classaccs]
 
     # based on model number, return correct type of error array(s)
-    #####################
-    ## Edits 4
-    #####################
+
     def dictupdatecFro(self, Z, C, R, M, eps):
         '''
         multiplicative update for C in ||Z - ZCR||_F^2
@@ -232,20 +222,18 @@ class C_SSNMF:
         Returns
         -------
         updated C
-        #############################################
-        ## My calculation is purely based on note and 
-        ## did not include the missing indicator M
-        #############################################
+        ###############################################
+        ## My calculation is purely based on note and## 
+        ## did not include the missing indicator M#####
+        ###############################################
         '''
-        return np.muptiply(
+        return np.multiply(
                C,
-               np.divide( eps+ np.add(np.transpose(Z)@Z@R@np.transpose(R)@np.tranpose(C), \
-                                 np.transpose(Z)@Z@C@np.transpose(R)@R), \
-                          np.add(np.transpose(R@np.transpose(Z)@Z), \
-                                 np.transpose(Z)@Z@np.transpose(R)))
-    #####################
-    ## Edits 5
-    #####################
+               eps+ np.divide(np.transpose(Z) @ Z @ np.transpose(R),\
+                         eps+ np.transpose(Z) @ Z @ C @ R @ np.transpose(R)))
+    ######################
+    ###### Edits 5 #######
+    ######################
     def dictupdatesFro(self,Z, A, H, C, R, M, N, eps):
         '''
         multiplicative update for R in ||Z - AR||_F^2 + lam * ||H - HCR||_F^2
@@ -275,12 +263,10 @@ class C_SSNMF:
         ## did not include the missing indicator M & N
         #############################################
         ''' 
-        return np.muptiply(
+        return np.multiply(
                R,
-               np.divide( eps + np.add(np.transpose(C)@np.transpose(H)@H, \
-                                 np.transpose(A)@Z, \
-                          np.add(R@np.transpose(C)@np.transpose(H)@H@C), \
-                                 R@np.transpose(A)@A)))
+               eps + np.divide( np.add(np.transpose(C) @ np.transpose(H) @ H,np.transpose(A) @ Z), \
+                                eps + np.add(np.transpose(C) @ np.transpose(H) @ H @ C @ R, np.transpose(A) @ A @ R)))
 
     def dictupdateFro(self, Z, D, R, M, eps):
         '''
@@ -304,7 +290,7 @@ class C_SSNMF:
 
         return  np.multiply(
                 np.divide(D, eps + np.multiply(M, D@R) @ np.transpose(R)), \
-                np.multiply(M, Z) @ np.transpose(R))
+                          eps + np.multiply(M, Z) @ np.transpose(R))
 
     def dictupdateIdiv(self, Z, D, R, M, eps):
         '''
@@ -369,19 +355,19 @@ class C_SSNMF:
         ----------
         Y : array, optional
             Label matrix (default is self.Y).
-        B : array, optional
-            Left factor matrix of Y (default is self.B).
+        C : array, optional
+            Convexity matrix of Y (default is self.C).
         S : array, optional
             Right factor matrix of Y (default is self.S).
         L :
         Returns
         -------
         acc : float_
-            Fraction of correctly classified data points (computed with Y, B, S).
+            Fraction of correctly classified data points (computed with Y, C, S).
         '''
 
         Y = kwargs.get('Y', self.Y)
-        B = kwargs.get('B', self.B)
+        C = kwargs.get('C', self.C)
         S = kwargs.get('S', self.S)
 
         if Y is None:
@@ -391,7 +377,7 @@ class C_SSNMF:
 
         # count number of data points which are correctly classified
         numacc = 0
-        Yhat = B @ S
+        Yhat = Y @ C @ S
         for i in range(numdata):
             true_max = np.argmax(Y[:, i])
             approx_max = np.argmax(Yhat[:, i])
@@ -465,15 +451,19 @@ class C_SSNMF:
         Zhat = np.multiply(M, D @ S)
         fronorm = np.linalg.norm(np.multiply(M, Z) - Zhat, 'fro')
         return fronorm
-    def fronorm_c(self, Z, D, S, M, **kwargs):
+    
+    ######################
+    ###### Edits 6 #######
+    ######################
+    def fronorm_c(self, Z, C, S, M, **kwargs):
         '''
-        Compute Frobenius norm between Z and DS.
+        Compute Frobenius norm between Z and ZCS.
         Parameters
         ----------
         Z   : array
               Data matrix.
-        D   : array
-              Left factor matrix of Z.
+        C   : arrary
+              Convex Constraint Matrix.
         S   : array
               Right factor matrix of Z.
         M   : array
@@ -490,7 +480,7 @@ class C_SSNMF:
             M = np.ones(Z.shape, dtype = float)
 
         # compute norm
-        Zhat = np.multiply(M, D @ S)
+        Zhat = np.multiply(M, Z @ C @ S)
         fronorm = np.linalg.norm(np.multiply(M, Z) - Zhat, 'fro')
         return fronorm    
     
@@ -557,7 +547,7 @@ class SSNMF_N:
         self.W = kwargs.get('W', np.ones((rows, cols)))  # initialize missing data indicator matrix
         self.A = kwargs.get('A', np.random.rand(rows, k))  # initialize factor A
         self.S = kwargs.get('S', np.random.rand(k, cols))  # initialize factor S
-        self.C = 
+        #self.C = 
         self.tol = kwargs.get('tol', 1e-4) # initialize factor tol
 
         # check dimensions of X, A, and S match
