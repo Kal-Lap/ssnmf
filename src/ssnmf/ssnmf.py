@@ -138,7 +138,7 @@ class SSNMF_N:
             ##Convex nmf edit ##
             ####################
             if self.modelNum > 6:
-            self.C = kwargs.get('C',np.random.rand(cols,k)) # initialize factor C
+                self.C = kwargs.get('C',np.random.rand(cols,k)) # initialize factor C
                 if rows != np.shape(self.A)[0]:
                     raise Exception('The row dimensions of X and A are not equal.')
                 if cols != np.shape(self.S)[1]:
@@ -262,9 +262,9 @@ class SSNMF_N:
             if self.modelNum == 7:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
                 #capitalize C for readability
-                self.C = self.dictupdateCFro(self.Y,self.C, self.S, self.L, eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFro(self.Y,self.C, self.S, self.L, eps))
                 #fix from dictupdatesFro to repupdateConvexFF(self,eps) to follow format
-                self.S = self.repupdateYConvexFF(eps)
+                self.S = repscaling @ self.repupdateYConvexFF(eps) 
 
                 previousErr = currentErr
                 currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
@@ -274,8 +274,8 @@ class SSNMF_N:
             #with missing indicator
             if self.modelNum == 8:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
-                self.C = self.dictupdateCFroMiss(self.Y,self.C, self.S, self.L, eps)
-                self.S = self.repupdateYConvexFFMiss(eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFroMiss(self.Y,self.C, self.S, self.L, eps))
+                self.S = repscaling @ self.repupdateYConvexFFMiss(eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
@@ -285,8 +285,8 @@ class SSNMF_N:
             #add convex update with sq root to investigate behavior
             if self.modelNum == 9:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
-                self.C = self.dictupdateCFroSq(self.Y,self.C, self.S, self.L, eps)
-                self.S = self.repupdateYConvexFFsq(eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFroSq(self.Y,self.C, self.S, self.L, eps))
+                self.S = repscaling @ self.repupdateYConvexFFsq(eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
@@ -296,8 +296,8 @@ class SSNMF_N:
             #update allowing negative entries
             if self.modelNum == 10:
                 self.A = self.dictupdateFro(self.X, self.A, self.S, self.W, eps)
-                self.C = self.dictupdateCFroNeg(self.Y,self.C, self.S, self.L, eps)
-                self.S = self.repupdateYConvexFFNeg(eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFroNeg(self.Y,self.C, self.S, self.L, eps))
+                self.S = repscaling @ self.repupdateYConvexFFNeg(eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm(self.X, self.A, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
@@ -306,8 +306,8 @@ class SSNMF_N:
 
             if self.modelNum == 11:
                 self.B = self.dictupdateFro(self.Y, self.B, self.S, self.L, eps)
-                self.C = self.dictupdateCFro(self.X,self.C, self.S, self.W, eps)
-                self.S = self.repupdateXConvexFF(eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFro(self.X,self.C, self.S, self.W, eps))
+                self.S = repscaling @ self.repupdateXConvexFF(eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm_c(self.X, self.C, self.S, self.W)**2 + self.lam * (self.fronorm(self.Y, self.B, self.S, self.L)**2)
@@ -315,8 +315,8 @@ class SSNMF_N:
                     initialErr = currentErr
 
             if self.modelNum == 12:
-                self.C = self.dictupdateCFroBoth(self.X,self.Y,self.C, self.S, self.W, self.L, eps)
-                self.S = self.repupdateBothConvexFF(eps)
+                self.C, repscaling = self.scalingC(self.dictupdateCFroBoth(self.X,self.Y,self.C, self.S, self.W, self.L, eps))
+                self.S =  repscaling @ self.repupdateBothConvexFF(eps)
 
                 previousErr = currentErr
                 currentErr = self.fronorm_c(self.X, self.C, self.S, self.W)**2 + self.lam * (self.fronorm_c(self.Y, self.C, self.S, self.L)**2)
@@ -405,6 +405,23 @@ class SSNMF_N:
                 classaccs = np.array(classaccs)
                 return [errs, reconerrs, classerrs, classaccs]
         
+    ####################
+    ##Convex nmf edit ##
+    ####################
+    def scalingC(self, unscaledC):
+        #if C is nxm
+        #make diag mx of mxm
+        cols = np.shape(unscaledC)[1]
+        scaling = np.zeros((cols, cols))
+
+        invScalingArr = np.sum(unscaledC,axis=0)
+        scalingArr = 1./invScalingArr
+        
+        np.fill_diagonal(scaling, scalingArr)
+        C = unscaledC @ scaling
+        
+        np.fill_diagonal(scaling,invScalingArr)
+        return C, scaling
 
     # based on model number, return correct type of error array(s)
 
@@ -527,10 +544,17 @@ class SSNMF_N:
         Returns
         -------
         '''
-        return np.multiply(
+        try:
+             d = np.multiply(
                 np.divide(C, eps + self.absolutePositiveEntry(np.transpose(Z) @ Z) @ C @ R @ np.transpose(R) + self.absoluteNegativeEntry(np.transpose(Z) @ Z) @ np.transpose(R)),\
                 self.absolutePositiveEntry(np.transpose(Z) @ Z) @ np.transpose(R) + self.absoluteNegativeEntry(np.transpose(Z) @ Z) @ C @ R @ np.transpose(R)
                 )
+        except ZeroDivisionError:
+            print('dict update')
+            print(eps) 
+            print(self.absolutePositiveEntry(np.transpose(Z) @ Z) @ C @ R @ np.transpose(R))
+            print(self.absoluteNegativeEntry(np.transpose(Z) @ Z) @ np.transpose(R))
+        return d
 
     def dictupdateCFroSq(self, Z, C, R, M, eps):
         '''
@@ -555,8 +579,8 @@ class SSNMF_N:
                 np.sqrt(np.transpose(Z) @ Z @ np.transpose(R))
                 )
 
-    def dictupdateCFroBoth (self, X, Y, C, S, W, L, eps)
-    '''
+    def dictupdateCFroBoth (self, X, Y, C, S, W, L, eps):
+        '''
         multiplicative update for C in ||X - XCS||_F^2 + ||Y - YCS||_F^2
         Parameters
         ----------
@@ -633,14 +657,23 @@ class SSNMF_N:
                 )
     def repupdateYConvexFFMiss(self,eps):
         return np.multiply(
-                np.divide(self.S, eps + np.transpose(self.C) @ np.transpose(self.Y) @ np.multiply(self.L, self.Y @ self.C @ self.S) + np.transpose(self.A) @ np.multiply(W,self.A @ self.S)),\
+                np.divide(self.S, eps + np.transpose(self.C) @ np.transpose(self.Y) @ np.multiply(self.L, self.Y @ self.C @ self.S) + np.transpose(self.A) @ np.multiply(self.W,self.A @ self.S)),\
                 np.transpose(self.C) @ np.transpose(self.Y) @ np.multiply(self.L,self.Y) + np.transpose(self.A) @ np.multiply(self.W,self.X)
                 )
     def repupdateYConvexFFNeg (self,eps):
-        return np.multiply(
+        try:
+            d = np.multiply(
                 np.divide(self.S, eps + np.transpose(self.C) @ self.absolutePositiveEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S + self.absolutePositiveEntry(np.transpose(self.A) @ self.A) @ self.S + np.transpose(self.C) @ self.absoluteNegativeEntry( np.transpose(self.Y) @ self.Y) + self.absoluteNegativeEntry(np.transpose(self.A) @ self.X)),\
                 np.transpose(self.C) @ self.absolutePositiveEntry( np.transpose(self.Y) @ self.Y) + self.absolutePositiveEntry(np.transpose(self.A) @ self.X) + np.transpose(self.C) @ self.absoluteNegativeEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S + self.absoluteNegativeEntry(np.transpose(self.A) @ self.A) @ self.S
                 )
+        except ZeroDivisionError:
+            print('repupdateNeg')
+            print(eps)
+            print(np.transpose(self.C) @ self.absolutePositiveEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S)
+            print(self.absolutePositiveEntry(np.transpose(self.A) @ self.A) @ self.S)
+            print(np.transpose(self.C) @ self.absoluteNegativeEntry( np.transpose(self.Y) @ self.Y))
+            print(self.absoluteNegativeEntry(np.transpose(self.A) @ self.X))
+        return d
     def repupdateYConvexFFsq(self,eps):
         return np.multiply(
                 np.divide(self.S, eps + np.sqrt(np.transpose(self.C) @ np.transpose(self.Y) @ self.Y @ self.C @ self.S + np.transpose(self.A) @ self.A @ self.S)),\
@@ -648,10 +681,16 @@ class SSNMF_N:
                 )
 
     def repupdateXConvexFF(self,eps): 
-        return np.multiply(
+        try:
+            d = np.multiply(
                 np.divide(self.S, eps + np.transpose(self.C) @ np.transpose(self.X) @ self.X @ self.C @ self.S + np.transpose(self.B) @ self.B @ self.S),\
                 np.transpose(self.C) @ np.transpose(self.X) @ self.X + np.transpose(self.B) @ self.Y
                 )
+        except ZeroDivisionError:
+            print('repupdate')
+            print(eps)
+        return d
+            
     def repupdateBothConvexFF(self,eps):
         return np.multiply(
                 np.divide(self.S, eps + np.transpose(self.C) @ np.transpose(self.X) @ self.X @ self.C @ self.S + np.transpose(self.C) @ np.transpose(self.Y) @ self.Y @ self.C @ self.S),\
@@ -679,8 +718,9 @@ class SSNMF_N:
         '''
 
         Y = kwargs.get('Y', self.Y)
-        B = kwargs.get('B', self.B)
         S = kwargs.get('S', self.S)
+
+        
 
         if Y is None:
             raise Exception('Label matrix Y not provided: model is not supervised.')
@@ -689,7 +729,13 @@ class SSNMF_N:
 
         # count number of data points which are correctly classified
         numacc = 0
-        Yhat = B @ S
+        if self.modelNum >6 and self.modelNum !=11:
+            C = kwargs.get('C',self.C)
+            Yhat = Y @ C @ S
+        else:
+            B = kwargs.get('B', self.B)
+            Yhat = B @ S
+
         for i in range(numdata):
             true_max = np.argmax(Y[:, i])
             approx_max = np.argmax(Yhat[:, i])
@@ -1386,3 +1432,5 @@ class SSNMF(SSNMF_N, SSNMF_T):
             return SSNMF_N.fronorm(self, Z, D, S, M, **kwargs)
         if self.str == "torch":
             return SSNMF_T.fronorm(self, Z, D, S, M, **kwargs)
+
+
