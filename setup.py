@@ -10,7 +10,7 @@ with open("README.md") as readme_file:
 
 test_requirements = [
     "numpy",
-    "torch"
+    "torch",
     "scipy==1.4.1",
     "pytest",
 ]
