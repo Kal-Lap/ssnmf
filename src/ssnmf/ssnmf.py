@@ -661,19 +661,11 @@ class SSNMF_N:
                 np.transpose(self.C) @ np.transpose(self.Y) @ np.multiply(self.L,self.Y) + np.transpose(self.A) @ np.multiply(self.W,self.X)
                 )
     def repupdateYConvexFFNeg (self,eps):
-        try:
-            d = np.multiply(
+        return np.multiply(
                 np.divide(self.S, eps + np.transpose(self.C) @ self.absolutePositiveEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S + self.absolutePositiveEntry(np.transpose(self.A) @ self.A) @ self.S + np.transpose(self.C) @ self.absoluteNegativeEntry( np.transpose(self.Y) @ self.Y) + self.absoluteNegativeEntry(np.transpose(self.A) @ self.X)),\
                 np.transpose(self.C) @ self.absolutePositiveEntry( np.transpose(self.Y) @ self.Y) + self.absolutePositiveEntry(np.transpose(self.A) @ self.X) + np.transpose(self.C) @ self.absoluteNegativeEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S + self.absoluteNegativeEntry(np.transpose(self.A) @ self.A) @ self.S
                 )
-        except ZeroDivisionError:
-            print('repupdateNeg')
-            print(eps)
-            print(np.transpose(self.C) @ self.absolutePositiveEntry(np.transpose(self.Y) @ self.Y)@ self.C @ self.S)
-            print(self.absolutePositiveEntry(np.transpose(self.A) @ self.A) @ self.S)
-            print(np.transpose(self.C) @ self.absoluteNegativeEntry( np.transpose(self.Y) @ self.Y))
-            print(self.absoluteNegativeEntry(np.transpose(self.A) @ self.X))
-        return d
+        
     def repupdateYConvexFFsq(self,eps):
         return np.multiply(
                 np.divide(self.S, eps + np.sqrt(np.transpose(self.C) @ np.transpose(self.Y) @ self.Y @ self.C @ self.S + np.transpose(self.A) @ self.A @ self.S)),\
@@ -720,8 +712,6 @@ class SSNMF_N:
         Y = kwargs.get('Y', self.Y)
         S = kwargs.get('S', self.S)
 
-        
-
         if Y is None:
             raise Exception('Label matrix Y not provided: model is not supervised.')
 
@@ -735,6 +725,8 @@ class SSNMF_N:
         else:
             B = kwargs.get('B', self.B)
             Yhat = B @ S
+
+        ####plt.imshow(Yhat, cmap ='Greens')
 
         for i in range(numdata):
             true_max = np.argmax(Y[:, i])
